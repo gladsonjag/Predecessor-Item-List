@@ -5,6 +5,7 @@ from operator import attrgetter
 import pandas as pd
 import streamlit as st
 from st_aggrid import GridOptionsBuilder, AgGrid, GridUpdateMode, DataReturnMode, ColumnsAutoSizeMode
+import math
 
 
 
@@ -90,7 +91,10 @@ class Item:
             if "Health" in stat:
                 self.Health = int(re.sub(r'[^0-9]', '', stat))
             if "Gold" in stat:
-                self.Gold = int(re.sub(r'[^0-9]', '', stat))
+                try:
+                    self.Gold = int(re.sub(r'[^0-9]', '', stat))
+                except:
+                    self.Gold = int(0)
 
         return
 
@@ -162,22 +166,30 @@ for item in item_name_list:
 Ability_Haste, Movement_Speed, Life_Steal, Health, Gold) = sort_attr_list(item_list)
 
 df = pd.DataFrame([item.__dict__ for item in item_list])
+df = df.rename(columns={"Physical_Power" : "Phys Power", "Physical_Pen" : "Phys Pen", "Physical_Armor": "Phys Armor", "Magical_Power" : "Mag Power", "Magical_Pen" : "Mag Pen", "Magical_Armor" : "Mag Armor", 
+"Attack_Speed" : " Atk Speed", "Critical_Chance" : "Crit Chance", "Ability_Haste" : "Ability Haste", "Movement_Speed" : "Movement Speed", "Life_Steal" : "Life Steal"})
 
+#-----------------WEBSITE-------------------
 
-#Creating the website and making it pretty with all the data
-st.set_page_config(page_title='Predecessor Items', page_icon=":bar_chart:",
-                    layout="wide")
-st.header("Predecessor Fan Made Item Stat Chart")
-st.caption("[All Item Stats are Gathered from Predecessor Wiki HERE](https://predecessor.fandom.com/wiki/Predecessor_Wiki)")
-st.caption("Please Note this is a fanmade website by one person, not affilited with Omeda Studios or with anyone on the wikifandom team ")
-st.caption("BASE STATS ONLY I.E NO PASSIVES")
-st.subheader("Predecessor Item List")
+#-----------------HEADER---------------------
+def create_header():
+    st.set_page_config(page_title='Predecessor Items', page_icon=":bar_chart:", layout="wide")
+                        
+    st.header("Predecessor Fan Made Item Stat Chart")
+    st.caption("[All Item Stats are Gathered from Predecessor Wiki HERE](https://predecessor.fandom.com/wiki/Predecessor_Wiki)")
+    st.caption("Please Note this is a fanmade website by one person, not affiliated with Omeda Studios or with anyone on the wikifandom team ")
+    st.caption("BASE STATS ONLY I.E NO PASSIVES")
+    st.subheader("Predecessor Item List")
+    return
+create_header()
+#----------------HEADER(CLOSED)-------------------
 
+#----------------ITEM DATA TABLE------------------
 #Data Modulue
 gb = GridOptionsBuilder.from_dataframe(df)
 gb.configure_pagination(paginationAutoPageSize=True) #Add Pagination
 gb.configure_side_bar()
-gb.configure_selection("multiple", use_checkbox=False, groupSelectsChildren="Group checkbox select children") #enables multi row selection
+gb.configure_selection("single", use_checkbox=False, groupSelectsChildren="Group checkbox select children") #enables multi row selection
 gridOptions = gb.build()
 
 grid_response = AgGrid(
@@ -185,21 +197,116 @@ grid_response = AgGrid(
     gridOptions=gridOptions,
     data_return_mode='AS_INPUT', 
     update_mode='MODEL_CHANGED', 
-    fit_columns_on_grid_load=False,
+    fit_columns_on_grid_load=True,
     theme='streamlit', #Add theme color to the table
     enable_enterprise_modules=True,
-    height=800, 
-    #width="100%",
-    columns_auto_size_mode=ColumnsAutoSizeMode.FIT_CONTENTS,
+    height=600, 
+    width=800,
+    columns_auto_size_mode=ColumnsAutoSizeMode.FIT_ALL_COLUMNS_TO_VIEW,
     reload_data=True
 )
 
 df = grid_response['data']
 selected = grid_response['selected_rows'] 
-df = pd.DataFrame(selected) #Pass the selected rows to a new dataframe df
+df_select = pd.DataFrame(selected) #Pass the selected rows to a new dataframe df
+#--------------ITEM DATA TABLE(CLOSED)--------------
+
+#--------------Expanded SPG--------------------------
+#creates a list of list of all the new SPG data for each item
+gpi_data_list = []
+df_iterate = df.set_index("Name")
+for row in df_iterate.itertuples(index=False):
+    row_iter = []
+    for index in row:
+        try:
+            new_gpi = round((index / row[-1]), 5)
+        except:
+            new_gpi = 0
+        row_iter.append(new_gpi)
+    gpi_data_list.append(row_iter)
+
+gpi_data = pd.DataFrame(gpi_data_list)
+#for loop to get the names on the y axis (index)
+for name in item_name_list:
+    gpi_data = gpi_data.rename(index = {item_name_list.index(name) : name})
+
+gpi_data = gpi_data.rename(columns={0 : "Phys Power", 1 : "Phys Pen", 2: "Phys Armor", 3 : "Mag Power", 4 : "Mag Pen", 5 : "Mag Armor", 
+6 : " Atk Speed", 7 : "Crit Chance", 8 : "Ability Haste", 9 : "Movement Speed", 10 : "Life Steal", 11 : "health", 12 : "Gold"})
 
 
-#-----BOTTOM SECTION---------
+#creates a usable dataframe for selecting which stat to see a GPI chart for
+gpi_arr = df.columns.values
+gpi_arr = np.delete(gpi_arr, 0, 0)
+gpi_arr = np.delete(gpi_arr, -1, 0)
+with st.expander(label = "Stat per Gold", expanded=True):
+    st.header("Stat per Gold")
+    st.caption("Bigger is better, i.e higher stat per gold spent on item")
+    col_select = st.selectbox(
+        "Select stat type",
+        options = gpi_arr,
+        
+    )
+    gpi_data = gpi_data.loc[gpi_data[col_select]>0]
+    #creates the bar chart by creating a new data frame with the gold per item
+    st.bar_chart(gpi_data, y=col_select, use_container_width=True, height=500)
+
+
+
+
+
+#--------------------SIDEBAR--------------------
+
+st.sidebar.header("Gold Per Stat")
+st.sidebar.caption("i.e How efficent the item is in terms of the stats you are getting to gold, LOWER IS BETTER")
+st.sidebar.subheader("Click on item to see GPS")
+
+
+#gets all stat types to show user in sidebar
+stat_int_list = [0,0,0,0,0,0,0,0,0,0,0,0]
+
+def user_select(df_select):
+    stat_int_list = []
+    for type_ in df_select:
+        stat_int = getattr(df_select, type_)
+        stat_int = pd.DataFrame([stat_int])
+        stat_int = stat_int[0][0]
+        if isinstance(stat_int, np.int64):
+            stat_int_list.append(stat_int)
+
+    del stat_int_list[-1]
+    return (stat_int_list)
+
+
+if df_select.shape[0] != 0:
+    stat_int_list = user_select(df_select)
+
+
+#gets the Gold value from the selcted row user is clicking
+gold2 = df_select.get("Gold")
+gold1 = pd.DataFrame([gold2])
+gold = gold1[0][0]
+
+gpi_list = []
+for stat in stat_int_list:
+    try:
+        gpi = gold / stat
+    except:
+        gpi = 0
+    if math.isinf(gpi):
+        gpi = 0
+    else:
+        gpi=round(gpi, 2 )
+    gpi_list.append(gpi)
+    
+df_gps = pd.DataFrame(gpi_list, columns=(["GPS"]), index=["Phys Power","Phys Pen","Phys Armor","Mag Power",
+"Mag Pen","Mag Armor","Atk Speed","Crit Chance","Ability Haste","Movement Speed","Life Steal", "Health"])
+
+st.sidebar.table(df_gps.style.format("{:.2f}"))
+
+st.sidebar.caption("I may add a section here to read the item passive, just for refrence")
+#-----------------SIDEBAR(CLOSED)-----------------
+
+#-----------------BOTTOM SECTION------------------
 
 st.markdown("")
 
@@ -211,3 +318,5 @@ with right_column:
     st.subheader("Predecessor wiki")
     st.write("Thanks to MeatyManLink & the community updating all the stats on the fan made wiki! 'https://predecessor.fandom.com/wiki/Predecessor_Wiki'")
 st.markdown("")
+
+#-------------BOTTOM SECTION(CLOSED)-----------------
